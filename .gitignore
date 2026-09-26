@@ -10,7 +10,6 @@ models/
 # Laufzeit-Daten (Monitoring-Logs, keine Testdaten committen)
 data/monitoring/
 data/layoutlm_dataset.jsonl
-data/policy_index.json
 
 # macOS-spezifische Systemdateien
 .DS_Store
