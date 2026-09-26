@@ -1,0 +1,23 @@
+# Virtuelle Umgebung
+venv/
+
+# Trainingsdatensatz (zu groß, Lizenzfragen - liegt bei Kaggle)
+data/SROIE2019/
+
+# Trainiertes Modell (zu groß für GitHub, wird auf Hugging Face gehostet)
+models/
+
+# Laufzeit-Daten (Monitoring-Logs, keine Testdaten committen)
+data/monitoring/
+data/layoutlm_dataset.jsonl
+data/policy_index.json
+
+# macOS-spezifische Systemdateien
+.DS_Store
+
+# Python Cache
+__pycache__/
+*.pyc
+
+# VS Code Einstellungen (persönliche Konfiguration, nicht projektrelevant)
+.vscode/
