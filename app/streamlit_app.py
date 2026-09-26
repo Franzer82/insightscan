@@ -10,7 +10,10 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 from pipeline import load_all_models, run_pipeline_on_image
 from monitoring import compute_stats, get_recent_fallback_trend, load_logs
 
-TEST_IMG_DIR = Path(__file__).parent.parent / "data" / "SROIE2019" / "test" / "img"
+# Kleine, fest ins Repo committete Auswahl an Beispielbelegen - der komplette
+# SROIE-Datensatz ist zu gross fuer GitHub und liegt daher nicht auf dem
+# Streamlit-Server. Diese 6 Bilder reichen fuer eine Demo voellig aus.
+SAMPLE_RECEIPTS_DIR = Path(__file__).parent.parent / "data" / "sample_receipts"
 
 DEFAULT_CURRENCY = "RM"
 
@@ -143,8 +146,10 @@ def get_models():
 
 
 def get_sample_receipts():
-    sample_files = sorted(TEST_IMG_DIR.glob("*.jpg"))
-    return sample_files[:10]
+    """Liest die kleine, fest im Repo enthaltene Beispielbeleg-Auswahl ein."""
+    if not SAMPLE_RECEIPTS_DIR.exists():
+        return []
+    return sorted(SAMPLE_RECEIPTS_DIR.glob("*.jpg"))
 
 
 def display_result(result: dict):
@@ -202,8 +207,6 @@ def display_result(result: dict):
 
 
 def display_monitoring_dashboard():
-    """Zeigt Kennzahlen darüber, wie oft LayoutLM erfolgreich war vs. wie
-    oft der Regex-Fallback einspringen musste - unser MLOps-Monitoring."""
     logs = load_logs()
     stats = compute_stats(logs)
 
@@ -273,13 +276,17 @@ def main():
 
     with tab_sample:
         sample_files = get_sample_receipts()
-        sample_names = [f.stem for f in sample_files]
-        selected_name = st.selectbox("Beispielbeleg auswählen", sample_names)
 
-        if selected_name:
-            selected_path = next(f for f in sample_files if f.stem == selected_name)
-            if st.button("Diesen Beispielbeleg verwenden"):
-                image_to_process = Image.open(selected_path)
+        if not sample_files:
+            st.warning("Keine Beispielbelege gefunden.")
+        else:
+            sample_names = [f.stem for f in sample_files]
+            selected_name = st.selectbox("Beispielbeleg auswählen", sample_names)
+
+            if selected_name:
+                selected_path = next(f for f in sample_files if f.stem == selected_name)
+                if st.button("Diesen Beispielbeleg verwenden"):
+                    image_to_process = Image.open(selected_path)
 
     with tab_monitoring:
         display_monitoring_dashboard()
