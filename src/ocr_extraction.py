@@ -6,6 +6,11 @@ from PIL import Image
 
 TESSERACT_CONFIG = "--psm 6"
 
+# Englisch UND Deutsch gleichzeitig: Belege koennen in beiden Sprachen
+# vorliegen (z.B. malaysische SROIE-Belege auf Englisch, eigene Testbelege
+# auf Deutsch). Tesseract kann mehrere Sprachen mit "+" kombiniert nutzen.
+TESSERACT_LANG = "eng+deu"
+
 
 def extract_words_with_boxes(image: Image.Image, min_confidence: int = 30):
     """Nutzt Tesseract, um aus einem beliebigen Belegbild Wörter UND deren
@@ -13,7 +18,7 @@ def extract_words_with_boxes(image: Image.Image, min_confidence: int = 30):
     Wörter einer Zeile bekommen dieselbe (die gesamte Zeile umspannende)
     Box zugewiesen - das entspricht der Struktur unserer Trainingsdaten."""
     data = pytesseract.image_to_data(
-        image, lang="eng", config=TESSERACT_CONFIG, output_type=Output.DICT
+        image, lang=TESSERACT_LANG, config=TESSERACT_CONFIG, output_type=Output.DICT
     )
 
     lines = defaultdict(list)
@@ -60,7 +65,7 @@ def extract_raw_text(image: Image.Image) -> str:
     """Liefert den kompletten erkannten Text als einfachen String (Lesereihenfolge,
     mit Zeilenumbrüchen). Wird für den Regex-Fallback genutzt, wenn LayoutLM ein
     Feld nicht erkennen konnte - unabhängig von der Wort-für-Wort-Klassifikation."""
-    return pytesseract.image_to_string(image, lang="eng", config=TESSERACT_CONFIG)
+    return pytesseract.image_to_string(image, lang=TESSERACT_LANG, config=TESSERACT_CONFIG)
 
 
 def scale_boxes(boxes: list, img_width: int, img_height: int) -> list:

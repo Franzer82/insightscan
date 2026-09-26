@@ -1,11 +1,13 @@
 import json
 import os
+import time
 from pathlib import Path
 
 import numpy as np
 import torch
 from dotenv import load_dotenv
 from google import genai
+from google.genai import errors as genai_errors
 from PIL import Image
 from sentence_transformers import SentenceTransformer
 from transformers import BertTokenizerFast, LayoutLMForTokenClassification
@@ -30,6 +32,11 @@ EMBEDDING_MODEL_NAME = "all-MiniLM-L6-v2"
 # erreichbar. Gemini ist eine kostenlose Cloud-API, die von ueberall aus
 # erreichbar ist - notwendige Voraussetzung fuer das oeffentliche Deployment.
 GEMINI_MODEL = "gemini-3.8-flash"
+
+# Wie oft bei einem kurzzeitigen Serverfehler (503, Ueberlastung) erneut
+# versucht wird, bevor endgueltig aufgegeben wird.
+GEMINI_MAX_RETRIES = 3
+GEMINI_RETRY_DELAY_SECONDS = 5
 
 MAX_LENGTH = 512
 TOP_K = 3
@@ -226,18 +233,38 @@ auf Deutsch."""
 
 
 def query_gemini(prompt: str) -> str:
-    """Fragt Google Gemini statt des lokalen Ollama-Modells an - notwendig,
-    da eine gehostete Cloud-App keinen Zugriff auf lokal laufende Programme
-    wie Ollama hat. Der API-Key wird aus der .env-Datei gelesen (lokal) bzw.
-    aus den Streamlit-Secrets (im spaeteren Deployment)."""
+    """Fragt Google Gemini statt des lokalen Ollama-Modells an.
+
+    Enthaelt eine automatische Wiederholung bei kurzzeitigen Serverfehlern
+    (Google meldet dann einen 503-Fehler, meist wegen hoher Auslastung auf
+    Google-Seite). Das ist kein Fehler unserer Anfrage, sondern ein
+    voruebergehendes Problem, das sich innerhalb weniger Sekunden meist von
+    selbst loest - ein einfacher Wiederholungsversuch macht die oeffentliche
+    App deutlich robuster, ohne dass Nutzer:innen einen Fehler zu sehen
+    bekommen."""
     api_key = os.environ.get("GEMINI_API_KEY")
     client = genai.Client(api_key=api_key)
 
-    response = client.models.generate_content(
-        model=GEMINI_MODEL,
-        contents=prompt,
+    last_error = None
+    for attempt in range(1, GEMINI_MAX_RETRIES + 1):
+        try:
+            response = client.models.generate_content(
+                model=GEMINI_MODEL,
+                contents=prompt,
+            )
+            return response.text
+        except genai_errors.ServerError as error:
+            last_error = error
+            if attempt < GEMINI_MAX_RETRIES:
+                time.sleep(GEMINI_RETRY_DELAY_SECONDS)
+
+    # Alle Versuche fehlgeschlagen: statt eines harten Absturzes eine
+    # verstaendliche Nachricht zurueckgeben, die die App normal anzeigen kann.
+    return (
+        "Die Zusammenfassung konnte gerade nicht erstellt werden, da der KI-Dienst "
+        "momentan überlastet ist. Das Prüfergebnis oben (Betrag/Frist) ist davon "
+        "nicht betroffen und weiterhin korrekt. Bitte versuche es in Kürze erneut."
     )
-    return response.text
 
 
 def run_compliance_check(receipt_fields: dict, embedding_model, currency: str = DEFAULT_CURRENCY):
