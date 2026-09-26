@@ -21,3 +21,5 @@ __pycache__/
 
 # VS Code Einstellungen (persönliche Konfiguration, nicht projektrelevant)
 .vscode/
+data/sample_preprocessed.png
+.env

@@ -1,9 +1,11 @@
 import json
+import os
 from pathlib import Path
 
 import numpy as np
-import requests
 import torch
+from dotenv import load_dotenv
+from google import genai
 from PIL import Image
 from sentence_transformers import SentenceTransformer
 from transformers import BertTokenizerFast, LayoutLMForTokenClassification
@@ -13,11 +15,21 @@ from field_fallback import extract_date_fallback, extract_total_fallback
 from monitoring import log_prediction
 from ocr_extraction import extract_raw_text, extract_words_with_boxes, scale_boxes
 
-MODEL_DIR = Path("models/layoutlm-insightscan")
+# .env-Datei einlesen, damit os.environ.get() den API-Key findet
+load_dotenv()
+
+# Modell liegt auf dem Hugging Face Hub statt lokal - wichtig fuers Deployment,
+# da der lokale models/-Ordner bewusst nicht Teil des GitHub-Repos ist.
+MODEL_DIR = "Franzer82/insightscan-layoutlm"
+
 POLICY_INDEX_FILE = Path("data/policy_index.json")
 EMBEDDING_MODEL_NAME = "all-MiniLM-L6-v2"
-OLLAMA_URL = "http://localhost:11434/api/generate"
-OLLAMA_MODEL = "gemma3"
+
+# Gemini statt Ollama: Ollama laeuft nur lokal auf diesem Mac und waere in
+# einer gehosteten Cloud-Umgebung (z.B. Streamlit Community Cloud) nicht
+# erreichbar. Gemini ist eine kostenlose Cloud-API, die von ueberall aus
+# erreichbar ist - notwendige Voraussetzung fuer das oeffentliche Deployment.
+GEMINI_MODEL = "gemini-3.8-flash"
 
 MAX_LENGTH = 512
 TOP_K = 3
@@ -126,11 +138,7 @@ def load_words_from_ocr(image: Image.Image, img_width: int, img_height: int):
 
 
 def extract_receipt_fields_with_fallback(words, boxes, model, tokenizer, id2label, raw_text: str) -> dict:
-    """Kombiniert LayoutLM-Erkennung mit einem Regex-Fallback für DATE und TOTAL.
-
-    Der Fallback für DATE greift nicht nur bei leerem Feld, sondern auch, wenn
-    das gelieferte Datum sich nicht sinnvoll parsen lässt (z.B. wenn LayoutLM
-    fälschlich eine Steuernummer als Datum einstuft)."""
+    """Kombiniert LayoutLM-Erkennung mit einem Regex-Fallback für DATE und TOTAL."""
     word_predictions = predict_labels(model, tokenizer, words, boxes, id2label)
     predicted_fields = extract_fields_from_predictions(words, word_predictions)
 
@@ -217,17 +225,19 @@ auf Deutsch."""
     return prompt
 
 
-def query_ollama(prompt: str) -> str:
-    response = requests.post(
-        OLLAMA_URL,
-        json={
-            "model": OLLAMA_MODEL,
-            "prompt": prompt,
-            "stream": False,
-        },
+def query_gemini(prompt: str) -> str:
+    """Fragt Google Gemini statt des lokalen Ollama-Modells an - notwendig,
+    da eine gehostete Cloud-App keinen Zugriff auf lokal laufende Programme
+    wie Ollama hat. Der API-Key wird aus der .env-Datei gelesen (lokal) bzw.
+    aus den Streamlit-Secrets (im spaeteren Deployment)."""
+    api_key = os.environ.get("GEMINI_API_KEY")
+    client = genai.Client(api_key=api_key)
+
+    response = client.models.generate_content(
+        model=GEMINI_MODEL,
+        contents=prompt,
     )
-    response.raise_for_status()
-    return response.json()["response"]
+    return response.text
 
 
 def run_compliance_check(receipt_fields: dict, embedding_model, currency: str = DEFAULT_CURRENCY):
@@ -238,7 +248,7 @@ def run_compliance_check(receipt_fields: dict, embedding_model, currency: str = 
     relevant_chunks = find_relevant_chunks(query, policy_index, embedding_model)
 
     prompt = build_prompt(receipt_fields, relevant_chunks, rule_results, currency)
-    summary = query_ollama(prompt)
+    summary = query_gemini(prompt)
 
     return {
         "rule_results": rule_results,
@@ -268,7 +278,7 @@ def load_all_models():
 
 def run_pipeline_on_image(image: Image.Image, models: dict, currency: str = DEFAULT_CURRENCY) -> dict:
     """Die vollständige Pipeline für EIN BELIEBIGES Bild: OCR -> LayoutLM
-    (mit Regex-Fallback) -> Monitoring-Log -> Compliance-Check (Regeln + RAG)."""
+    (mit Regex-Fallback) -> Monitoring-Log -> Compliance-Check (Regeln + RAG + Gemini)."""
     img_width, img_height = image.size
 
     words, boxes = load_words_from_ocr(image, img_width, img_height)
@@ -301,7 +311,7 @@ if __name__ == "__main__":
     print("Lade alle Modelle ...")
     models = load_all_models()
 
-    print("Führe komplette Pipeline aus ...\n")
+    print("Führe komplette Pipeline aus (mit Gemini statt Ollama) ...\n")
     image = Image.open(sample_path)
     result = run_pipeline_on_image(image, models, currency="EUR")
 
